@@ -1,0 +1,69 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for installEtcd
+
+- name: Create temporary directory
+  ansible.builtin.file:
+    path: "{{ temp_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Download etcd release
+  ansible.builtin.get_url:
+    url: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-{{ etcd_arch }}.tar.gz"
+    dest: "{{ temp_dir }}/etcd.tar.gz"
+    
+
+- name: Extract etcd archive
+  ansible.builtin.unarchive:
+    src: "{{ temp_dir }}/etcd.tar.gz"
+    dest: "{{ temp_dir }}"
+    remote_src: yes
+    extra_opts: "--strip-components=1"  # This extracts contents without the parent folder
+    creates: "{{ temp_dir }}/etcd"  # Makes task idempotent
+
+- name: Install etcd binaries
+  ansible.builtin.copy:
+    src: "{{ temp_dir }}/{{ item }}"
+    dest: "{{ install_dir }}/{{ item }}"
+    mode: '0755'
+    remote_src: yes
+  loop:
+    - etcd
+    - etcdctl
+  register: binaries_copied
+
+- name: Verify installation
+  ansible.builtin.command: "etcd --version"
+  register: etcd_version_check
+  changed_when: false
+
+- name: Show version
+  ansible.builtin.debug:
+    var: etcd_version_check.stdout
+
+- name: Clean up
+  ansible.builtin.file:
+    path: "{{ temp_dir }}"
+    state: absent
+  when: binaries_copied is changed
+
+- name: Create etcd system user
+  ansible.builtin.user:
+    name: etcd
+    system: yes
+    home: /var/lib/etcd
+    shell: /bin/false
+    create_home: yes  # Creates the home directory if it doesn't exist
+    state: present
+  become: yes
+
+- name: Verify etcd user was created
+  ansible.builtin.command: "id etcd"
+  register: etcd_user_check
+  changed_when: false
+
+- name: Display etcd user info
+  ansible.builtin.debug:
+    var: etcd_user_check.stdout
+

@@ -1,0 +1,137 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for PostgreSQL_and_Patroni
+- name: Create directory data
+  ansible.builtin.file:
+    path: /var/lib/postgresql/data
+    state: directory
+
+- name: Create directory ssl
+  ansible.builtin.file:
+    path: /var/lib/postgresql/ssl
+    state: directory
+
+
+
+- name: moving serts to postgress
+  ansible.builtin.copy:
+    src: "certs/{{ item }}"
+    dest: /tmp
+    remote_src: no 
+  loop:
+    - server.crt 
+    -  server.key 
+    -  server.req
+ 
+- name: moving files (again)
+  shell: | 
+    cd /tmp
+    mv server.crt server.key server.req /var/lib/postgresql/ssl
+  become: yes
+
+- name: Updating permissions
+  shell: |
+    chmod 600 /var/lib/postgresql/ssl/server.key
+    chmod 644 /var/lib/postgresql/ssl/server.crt
+    chmod 600 /var/lib/postgresql/ssl/server.req
+    chown postgres:postgres /var/lib/postgresql/data
+    chown postgres:postgres /var/lib/postgresql/ssl/server.*
+  become: yes
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+
+- name: Install acl
+  ansible.builtin.apt:
+    name: acl
+    state: present
+  become: yes
+
+- name: updating owner on postgress1
+  shell: |
+    setfacl -m u:postgres:r /etc/etcd/ssl/ca.crt
+    setfacl -m u:postgres:r /etc/etcd/ssl/etcd-node1.crt
+    setfacl -m u:postgres:r /etc/etcd/ssl/etcd-node1.key
+  when: "'postgress1' in inventory_hostname"
+
+- name: updating owner on postgress2
+  shell: |
+    setfacl -m u:postgres:r /etc/etcd/ssl/ca.crt
+    setfacl -m u:postgres:r /etc/etcd/ssl/etcd-node2.crt
+    setfacl -m u:postgres:r /etc/etcd/ssl/etcd-node2.key
+  when: "'postgress2' in inventory_hostname"
+
+
+- name: Install patroni
+  ansible.builtin.apt:
+    name: patroni
+    state: latest
+  become: yes
+
+- name: Create directory ssl
+  ansible.builtin.file:
+    path: /etc/patroni/
+    state: directory
+
+
+- name: deploy config 
+  copy: 
+    src: "{{'node1' if 'postgress1' in inventory_hostname else 'node2'}}config.yml"
+    dest: /etc/patroni/config.yml
+
+- name: patroni certs
+  shell: |
+    sh -c 'cat /var/lib/postgresql/ssl/server.crt /var/lib/postgresql/ssl/server.key > /var/lib/postgresql/ssl/server.pem'
+    chown postgres:postgres /var/lib/postgresql/ssl/server.pem
+    chmod 600 /var/lib/postgresql/ssl/server.pem
+  become: yes 
+    
+- name: certs verification 
+  shell: openssl x509 -in /var/lib/postgresql/ssl/server.pem -text -noout
+  become: yes
+  register: verification_output
+
+- name: verification results
+  debug:
+    var: verification_output
+
+- name: restart patroni 
+  shell: |
+    systemctl restart patroni
+  become: yes
+
+
+- name: Wait 30 seconds
+  pause:
+    seconds: 30
+
+- name: Update cluster state in configuration
+  lineinfile:
+    path: /etc/etcd/etcd.env
+    regexp: '^ETCD_INITIAL_CLUSTER_STATE='
+    line: 'ETCD_INITIAL_CLUSTER_STATE="existing"'
+
+- name: Get all PostgreSQL servers from inventory
+  set_fact:
+    postgres_nodes: "{{ groups.postgress_nodes | default([]) }}"
+
+- name: Check primary status on each PostgreSQL server
+  uri:
+    url: "https://{{ hostvars[item].ansible_host }}:8008/primary"
+    validate_certs: no
+    return_content: no
+  register: postgres_status
+  loop: "{{ postgres_nodes }}"
+  ignore_errors: yes
+
+- name: Display summarized results
+  debug:
+    msg: |
+      PostgreSQL Primary Status Report:
+      {% for result in postgres_status.results %}
+      {{ result.item }} ({{ hostvars[result.item].ansible_host }}): {{ result.status }} - {{ result.content | default('No response') }}
+      {% endfor %}
+  run_once: true 
+

@@ -1,0 +1,56 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for installPostgres
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+
+- name: Install postgresql-common
+  ansible.builtin.apt:
+    name: postgresql-common
+    state: latest
+  become: yes
+
+- name: Run postgresql repository script with auto-confirm
+  ansible.builtin.shell: "echo 'y' | /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh"
+  become: yes
+  args:
+    executable: /bin/bash
+
+    
+- name: Update apt cache again
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+
+- name: Install postgresql
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+    state: latest
+  become: yes
+
+- name: Stop postgresql service
+  ansible.builtin.service:
+    name: postgresql
+    state: stopped
+  become: yes
+  register: stop_output
+
+- name: Disable postgresql service
+  ansible.builtin.service:
+    name: postgresql
+    enabled: no
+  become: yes
+  register: disable_output
+
+- name: Show stop service output
+  ansible.builtin.debug:
+    var: stop_output
+
+- name: Show disable service output
+  ansible.builtin.debug:
+    var: disable_output

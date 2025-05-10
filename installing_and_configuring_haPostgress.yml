@@ -1,0 +1,18 @@
+---
+- name: installing and configuring patroni
+  become: true
+  hosts: postgress_nodes
+
+  roles:
+  - { role: installPostgress , when: ansible_system == 'Linux' }
+  - { role: installEtcd , when: ansible_system == 'Linux' }
+  - { role: Certs , when: ansible_system == 'Linux' }
+  - { role: PostgreSQL_and_Patroni , when: ansible_system == 'Linux' }
+
+
+- name: installing and configuring HA Proxy
+  become: true
+  hosts: haproxy_nodes
+
+  roles:
+  - { role: haproxy , when: ansible_system == 'Linux' }

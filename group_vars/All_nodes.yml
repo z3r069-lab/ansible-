@@ -1,0 +1,16 @@
+---
+ansible_user: osbeers
+ansible_ssh_private_key_file: /home/osbeers/.ssh/id_rsa
+
+etcd_cluster_members:
+  - name: "postgresql-01"
+    peer_url: "https://51.250.98.236:2380"
+    client_url: "https://51.250.98.236:2379"
+    cert_file: "/etc/etcd/ssl/etcd-node1.crt"
+    key_file: "/etc/etcd/ssl/etcd-node1.key"
+    
+  - name: "postgresql-02"
+    peer_url: "https://89.169.171.130:2380"
+    client_url: "https://89.169.171.130:2379"
+    cert_file: "/etc/etcd/ssl/etcd-node2.crt"
+    key_file: "/etc/etcd/ssl/etcd-node2.key"

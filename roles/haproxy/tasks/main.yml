@@ -1,0 +1,59 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for haproxy
+- name: install HA Proxy
+  apt: 
+    name: haproxy
+    state: latest
+  become: yes 
+
+- name: deploy config 
+  copy: 
+    src: haproxy.cfg
+    dest: /etc/haproxy/haproxy.cfg
+
+- name: Starting HA Proxy
+  shell: | 
+    systemctl reload haproxy
+  become: yes
+  
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+  become: yes
+
+- name: install keepalived
+  apt: 
+    name: keepalived
+    state: present
+  become: yes 
+
+- name: deploy config 
+  copy: 
+    src: "{{'node1' if 'haproxy1' in inventory_hostname else 'node2'}}keepalived.conf"
+    dest: /etc/keepalived/keepalived.conf
+
+- name: deploy check script
+  copy: 
+    src: check_haproxy.sh
+    dest: /etc/keepalived/check_haproxy.sh
+
+- name: creating user keepalived
+  shell: | 
+    useradd -r -s /bin/false keepalived_script
+    chmod +x /etc/keepalived/check_haproxy.sh
+    chown keepalived_script:keepalived_script /etc/keepalived/check_haproxy.sh
+    chmod 700 /etc/keepalived/check_haproxy.sh
+    systemctl restart keepalived
+  become: yes
+
+- name: port forwarding
+  shell: |
+    iptables -t nat -A PREROUTING -p tcp --dport 5432 -j DNAT --to-destination 192.168.60.110:5432
+    iptables -A FORWARD -p tcp -d 192.168.60.110 --dport 5432 -j ACCEPT
+  become: yes
+  run_once: yes
+  when: "'haproxy1' in inventory_hostname"
+
+
+

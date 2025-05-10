@@ -1,0 +1,14 @@
+[postgress_nodes]
+postgress1 ansible_host=89.169.160.41
+postgress2 ansible_host=158.160.89.9
+
+[haproxy_nodes]
+haproxy1 ansible_host=158.160.90.27
+haproxy2 ansible_host=158.160.23.197
+
+
+
+[All_nodes:children]
+postgress_nodes
+haproxy_nodes
+

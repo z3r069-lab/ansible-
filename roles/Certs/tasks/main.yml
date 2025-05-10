@@ -1,0 +1,162 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for Certs
+- name: generating certificates 
+  command: /home/osbeers/ansible/certs.sh
+  become: yes
+  become_method: sudo
+  become_user: osbeers
+  run_once: true
+  delegate_to: localhost
+  register: script_output
+  vars:
+    ansible_become_password: "{{ sudo_password }}"
+  
+
+- name: show output
+  debug:
+    var: script_output
+  run_once: true 
+  delegate_to: localhost
+
+  
+- name: moving serts to postgress 1
+  ansible.builtin.copy:
+    src: "certs/{{ item }}"
+    dest: /tmp
+    remote_src: no 
+  loop:
+    - ca.crt
+    - etcd-node1.crt
+    - etcd-node1.key
+  when: " 'postgress1' in inventory_hostname"
+
+- name: moving serts to postgress 2
+  ansible.builtin.copy:
+    src: "certs/{{ item }}"
+    dest: /tmp
+    remote_src: no 
+  loop:
+    - ca.crt
+    - etcd-node2.crt
+    - etcd-node2.key
+  when: " 'postgress2' in inventory_hostname"
+
+
+- name: moving files
+  shell: |
+    sudo mkdir -p /etc/etcd/ssl
+    mv /tmp/etcd-node*.crt /etc/etcd/ssl/
+    mv /tmp/etcd-node*.key /etc/etcd/ssl/
+    mv /tmp/ca.crt /etc/etcd/ssl/
+    chown -R etcd:etcd /etc/etcd/
+    chmod 600 /etc/etcd/ssl/etcd-node*.key
+    chmod 644 /etc/etcd/ssl/etcd-node*.crt /etc/etcd/ssl/ca.crt
+  become: yes
+
+#- name: Ensure etcd user owns all files
+#  ansible.builtin.file:
+#    path: /etc/etcd/
+#    state: directory
+#    owner: etcd
+#    group: etcd
+#    recurse: yes
+
+#- name: Set secure permissions for key files
+#  ansible.builtin.file:
+#    path: "/etc/etcd/ssl/{{ item }}"
+#    mode: '0600'
+#    owner: etcd
+#    group: etcd
+#  loop:
+#    - "etcd-{{ 'node1' if 'postgress1' in inventory_hostname else 'node2' }}.key"
+
+#- name: Set permissions for certificate files
+#  ansible.builtin.file:
+#    path: "/etc/etcd/ssl/{{ item }}"
+#    mode: '0644'
+#    owner: etcd
+#    group: etcd
+#  loop:
+#    - "etcd-{{ 'node1' if 'postgress1' in inventory_hostname else 'node2' }}.crt"
+#    - "ca.crt"   
+
+#- name: deploy config
+#  template: 
+#    src: etcd.env.j2
+#    dest: /etc/etcd/etcd.env
+#    owner: etcd
+#    group: etcd
+
+
+- name: deploy config 
+  copy: 
+    src: "{{'node1' if 'postgress1' in inventory_hostname else 'node2'}}etcd.env"
+    dest: /etc/etcd/etcd.env
+    
+
+- name: deploy service
+  copy: 
+    src: etcd.service
+    dest: /etc/systemd/system/etcd.service
+
+#- name: Create directory for etcd ETCD_DATA_DIR
+#  ansible.builtin.file:
+#    path: /var/lib/etcd 
+#    state: directory
+
+- name: Create directory for etcd ETCD_DATA_DIR
+  shell: |
+    mkdir -p /var/lib/etcd 
+    chown -R etcd:etcd /var/lib/etcd
+  become: yes
+
+- name: Reload systemd manager configuration
+  ansible.builtin.command:
+    cmd: systemctl daemon-reload
+  become: yes
+
+- name: Enable the etcd service to start on boot
+#  ansible.builtin.systemd:
+#    name: etcd
+#    enabled: yes
+#    state: started
+#  become: yes
+  shell: |
+    systemctl daemon-reload
+    systemctl enable etcd
+
+- name: check status
+  #ansible.builtin.command:
+  #  cmd: systemctl status etcd
+  #become: yes
+  shell: |
+    systemctl start etcd
+    systemctl status etcd
+  become: yes
+  register: status_output
+
+- name: display status
+  debug: 
+    var: status_output
+
+- name: check health
+  ansible.builtin.shell:
+    cmd: etcdctl --endpoints=https://127.0.0.1:2379   --cacert=/etc/etcd/ssl/ca.crt   --cert=/etc/etcd/ssl/etcd-{{'node1' if 'postgress1' in inventory_hostname else 'node2'}}.crt   --key=/etc/etcd/ssl/etcd-{{'node1' if 'postgress1' in inventory_hostname else 'node2'}}.key  endpoint health
+  become: yes
+  register: health_output
+
+- name: display health
+  debug: 
+    var: health_output
+
+- name: List etcd cluster members
+  shell: etcdctl --endpoints=https://127.0.0.1:2379   --cacert=/etc/etcd/ssl/ca.crt   --cert=/etc/etcd/ssl/etcd-{{'node1' if 'postgress1' in inventory_hostname else 'node2'}}.crt   --key=/etc/etcd/ssl/etcd-{{'node1' if 'postgress1' in inventory_hostname else 'node2'}}.key  member list
+  register: etcd_members
+  become: yes
+
+
+- name: Show etcd members
+  debug:
+    var: etcd_members.stdout_lines
+
