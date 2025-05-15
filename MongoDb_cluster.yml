@@ -1,0 +1,7 @@
+---
+- name: Install MongoDb Cluster
+  hosts: mongo_servers
+  become: yes
+ 
+  roles: 
+    - { role: Mongo, when: ansible_system == 'Linux' }

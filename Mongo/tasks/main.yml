@@ -1,0 +1,76 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for Mongo
+- name: Get external IP
+  uri:
+    url: https://ipecho.net/plain
+    return_content: yes
+  register: ext_ip_result
+
+- name: get gpg keys
+  apt:
+    name: 
+      - gnupg
+      - curl
+    state: present
+  become: true
+
+- name: get gpg keys
+  shell:  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+  become: true
+
+- name: create list file 
+  shell: echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+  become: true
+
+- name: update apt
+  apt:
+    update_cache: yes
+    state: present
+  become: true
+
+- name: install mongodb
+  shell: apt-get install -y mongodb-org
+  become: true
+
+- name: reload daemon
+  shell: systemctl daemon-reload
+  become: true
+
+- name: configure mongod
+  template:
+    src: mongod.conf.j2
+    dest: /etc/mongod.conf
+
+
+- name: port forwarding 
+  shell: |    
+    iptables -t nat -A PREROUTING -i eth0 -d {{hostvars[ansible_hostname].ansible_host}} -p tcp --dport 27017 -j DNAT --to-destination {{ansible_default_ipv4.address}}:27017
+    iptables -A FORWARD -p tcp -d {{ansible_default_ipv4.address}} --dport 27017 -j ACCEPT
+    iptables -t nat -A POSTROUTING -s {{ansible_default_ipv4.address}} -j MASQUERADE
+
+
+- name: start mongodb
+  shell: systemctl start mongod
+  become: true
+
+- name: enable mongodb
+  shell: systemctl enable mongod
+  become: true
+
+
+- name: copy init script
+  template:
+    src: init-replica.js.j2
+    dest: /tmp/init-replica.js
+  become: true
+  when: inventory_hostname == "mongo1"
+
+- name: execute mongosh init 
+  shell: mongosh --eval "load('/tmp/init-replica.js')"
+  become: true
+  when: inventory_hostname == "mongo1"
+
+
+
+

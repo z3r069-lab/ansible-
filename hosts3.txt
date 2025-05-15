@@ -1,0 +1,5 @@
+[mongo_servers]
+mongo2 ansible_host=158.160.13.206
+mongo1 ansible_host=158.160.28.147
+
+
