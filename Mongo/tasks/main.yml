@@ -7,7 +7,7 @@
     return_content: yes
   register: ext_ip_result
 
-- name: get gpg keys
+- name: install dependencies
   apt:
     name: 
       - gnupg
@@ -45,7 +45,7 @@
 
 - name: port forwarding 
   shell: |    
-    iptables -t nat -A PREROUTING -i eth0 -d {{hostvars[ansible_hostname].ansible_host}} -p tcp --dport 27017 -j DNAT --to-destination {{ansible_default_ipv4.address}}:27017
+    iptables -t nat -A PREROUTING -i eth0 -d {{hostvars[inventory_hostname].ansible_host}} -p tcp --dport 27017 -j DNAT --to-destination {{ansible_default_ipv4.address}}:27017
     iptables -A FORWARD -p tcp -d {{ansible_default_ipv4.address}} --dport 27017 -j ACCEPT
     iptables -t nat -A POSTROUTING -s {{ansible_default_ipv4.address}} -j MASQUERADE
 
