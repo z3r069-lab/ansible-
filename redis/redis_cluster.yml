@@ -1,0 +1,119 @@
+---
+- name: Install redis Cluster
+  hosts: redis hosts
+  become: yes
+ 
+  tasks: 
+  - name: install redis-server 
+    apt: 
+      name: 
+        - redis-server
+        - redis-sentinel
+
+
+  - name: stop redis-server service 
+    service: 
+      name: "redis-server"
+      state: "stopped"
+      enabled: "yes"
+      become: yes
+
+  - name: stop redis-sentinel service 
+    service: 
+      name: "redis-sentinel"
+      state: "stopped"
+      enabled: "yes"
+      become: yes
+
+  - name: change Redis config bind
+    lineinfile: dest=/etc/redis/redis.conf
+                regexp='^bind'
+                insertbefore=BOF
+                line='bind 127.0.0.1 {{ansible_host}}'
+     
+  - name: change redis protected mode
+    lineinfile: dest=/etc/redis/redis.conf 
+                regexp='^protected-mode'
+                insertbefore=BOF
+                line='protected-mode no'
+
+  - name: change redis config slaveof 
+    lineinfile: dest=/etc/redis/redis.conf 
+                regexp='^replicaof'
+                insertbefore=BOF
+                line="#replicaof"
+
+  - name: change redis config requirepass 
+    lineinfile: dest=/etc/redis/redis.conf 
+                line='requirepass pass'
+
+  - name: change redis config masterauth 
+    lineinfile: dest=/etc/redis/redis.conf 
+                line='masterauth pass'
+
+- 
+  become: true
+  hosts: node2 
+  become_method: sudo 
+  become_user: root
+
+  tasks: 
+  
+  - name: change redis config for slave
+    lineinfile: 
+      dest: /etc/redis/redis.conf
+      line: "replicaof {{ hostvars['node1'].ansible_host}} 6379"
+
+- 
+  become: true
+  hosts: redis hosts
+  become_method: sudo 
+  become_user: root 
+  tasks:
+  
+  - name: start redis-server
+    service: 
+      name: "redis-server"
+      state: "started"
+      enabled: "yes"
+
+  - name: change redis-sentinel config
+    copy: 
+      dest: "/etc/redis/sentinel.conf"
+      content: |
+        sentinel monitor redis-master {{ hostvars['node1'].ansible_host }} 6379 1
+        sentinel down-after-milliseconds redis-master 1000
+        sentinel failover-timeout redis-master 3000
+        sentinel parallel-syncs redis-master 1
+        bind {{ansible_host}} 127.0.0.1
+        sentinel auth-pass redis-master pass
+        protected-mode no
+
+  - name: start redis-sentinel service
+    service: 
+      name: "redis-sentinel"
+      state: "started"
+      enabled: "yes"
+
+  - name: stop redis-server service
+    service: 
+      name: "redis-server"
+      state: "stopped"
+      enabled: "yes"
+
+  - name: change redis-server.service config
+    lineinfile: dest=/usr/lib/systemd/system/redis-server.service
+                regexp='^After='
+                insertbefore=BOF
+                line='After=redis-sentinel.service'
+
+  - name: Daemon reload
+    shell: systemctl daemon-reload
+    become: yes
+
+  - name: start redis-server 
+    service: 
+      name: "redis-server"
+      state: "started"
+      enabled: "yes"
+      
